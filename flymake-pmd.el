@@ -239,7 +239,7 @@ Add this function to some apex/java/... major mode hook."
   (flymake-pmd--ensure-java-exists)
   (flymake-pmd--ensure-pmd-exists)
   (flymake-mode t)
-  (add-hook 'flymake-diagnostic-functions 'pmd-flymake--checker nil t))
+  (flymake-pmd-setup-backend))
 
 (provide 'flymake-pmd)
 ;;; flymake-pmd.el ends here
