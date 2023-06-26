@@ -27,37 +27,26 @@
   :prefix "flymake-pmd-"
   :group 'flymake)
 
-(defcustom flymake-pmd-ruleset-filename-list
-  '("pmd.xml" "pmd-ruleset.xml" "ruleset.xml")
-
+(defcustom flymake-pmd-ruleset-filename-list '("pmd.xml" "pmd-ruleset.xml" "ruleset.xml")
   "Names of PMD ruleset files to search for."
   :type '(repeat string)
-  :group 'pmd-flymake)
+  :group 'flymake-pmd)
 
-(defcustom flymake-pmd-java-executable
-  "java"
-
-  "The java executable used to run PMD.
-
-If the java command is not present in variable `exec-path', the full
+(defcustom flymake-pmd-executable-name "pmd"
+  "The PMD executable. 
+If the command is not present in variable `exec-path', the full
 path to the executable is required."
   :type 'string
-  :group 'pmd-flymake)
+  :group 'flymake-pmd)
 
-(defcustom flymake-pmd-pmd-home-dir
-  (getenv "PMD_HOME")
-
-  "Directory where PMD was installed.
-
-This value defaults to the PMD_HOME environment variable.
-It is used to locate the jar files that PMD needs at runtime."
-  :type 'string
-  :group 'pmd-flymake)
-
+(defcustom flymake-pmd-use-eglot nil
+  "Add eglot hook to enable PMD alongside eglot."
+  :type 'boolean
+  :group 'flymake-pmd)
 
 ;;;; Private
 
-(defvar-local pmd--flymake-proc nil)
+(defvar-local flymake-pmd--process nil)
 
 (defun flymake-pmd--find-ruleset-file ()
   "Search for a PMD ruleset file and return it.
@@ -81,149 +70,161 @@ buffer directory or its parents."
       )
     result))
 
-(defun flymake-pmd--ensure-java-exists ()
-  "Check that the configure java executable exists.
 
-Throw an error if no java executable is found."
-  (unless (executable-find flymake-pmd-java-executable)
-    (error "Cannot find Java. Check the value of `flymake-pmd-java-executable'"))
-  )
-
-(defun flymake-pmd--ensure-pmd-exists ()
-  "Check that the PMD installation dir exists."
-  (if (string-blank-p flymake-pmd-pmd-home-dir)
-      (error "`flymake-pmd-pmd-home-dir is not set"))
-  (unless (file-exists-p flymake-pmd-pmd-home-dir)
-    (error "`flymake-pmd-pmd-home-dir is not set"))
-  (unless (file-exists-p (flymake-pmd--pmd-lib-dir))
-    (error "Could not find PMD lib dir in '%s'" flymake-pmd-pmd-home-dir)))
-
-(defun flymake-pmd--pmd-lib-dir ()
-  "Return PMD lib dir (derived from PMD home dir)."
-  (file-name-as-directory
-   (concat
-    (file-name-as-directory
-     (expand-file-name flymake-pmd-pmd-home-dir))
-    "lib")))
-  
-(defun flymake-pmd--checker (report-fn &rest _args)
-  "Backend function for flymake.
-
-REPORT-FN callback function to notify flymake of the errors.
-
-See `flymake-diagnostic-functions' for more details."
-  ;; stop if we can't find Java
-  (flymake-pmd--ensure-java-exists)
-
-  ;; stop if we can't find PMD
-  (flymake-pmd--ensure-pmd-exists)
+(defun flymake-pmd--create-process (source-buffer callback)
+  "Create linter for SOURCE-BUFFER.
+CALLBACK is invoked once linter has finished the execution.
+CALLBACK accepts a buffer containing stdout from linter as its
+argument."
 
   ;; stop if we can't find a ruleset file
   (unless (flymake-pmd--find-ruleset-file) (error "Cannot find a ruleset file"))
 
   ;; if a live process launched in a earlier check was found, kill that process
-  (when (process-live-p pmd--flymake-proc)
-    (kill-process pmd--flymake-proc))
+  (when (process-live-p flymake-pmd--process)
+    (kill-process flymake-pmd--process))
 
-  ;; Save current buffer, remove any narrowing restriction
-  (let* ((source (current-buffer))
-	 (extension (file-name-extension (buffer-file-name (current-buffer))))
-	 ;; PMD relies on file extension to automatically select the language
+  ;; Save current buffer, remove any narrowing r
+  (let* (;; PMD relies on file extension to automatically select the language
 	 ;; so we make sure that the temporary buffer has the same extension
 	 ;; as the original file.
+         (extension (file-name-extension (buffer-file-name source-buffer)))
 	 (tmp-file (make-temp-file "pmd-input" nil (format ".%s" extension)))
-	 ;; For PMD to work on individual files, we need to provide a file
-	 ;; containing the name of the files that we want to analyse.
-	 (tmp-file-list (make-temp-file "pmd-file-list"))
-	 (classpath (concat (flymake-pmd--pmd-lib-dir) "*"))
 	 (ruleset-file (flymake-pmd--find-ruleset-file)))
 
     ;; save current buffer to temp file
     (write-region nil nil tmp-file nil -1)
-    ;; save tmp-file name to tmp file list
-    (write-region tmp-file nil tmp-file-list nil -1)
     (save-restriction
       (widen)
       ;; reset the `pmd--flymake-proc' process to a new process
-      (setq pmd--flymake-proc
-	    (make-process :name "pmd-flycheck"
+      (flymake-log :warning "starting process")
+      (setq flymake-pmd--process
+	    (make-process :name "flymake-pmd"
 			  :noquery t
 			  :connection-type 'pipe
 			  ;; make output go to a temporary buffer
-			  :buffer (generate-new-buffer "*pmd-flymake*")
-			  :stderr (get-buffer-create "*pmd-flymake-errors*")
-			  :command `(,flymake-pmd-java-executable
-				     "-classpath" ,classpath
-				     "net.sourceforge.pmd.PMD"
-				     "--format" "csv"
-				     "--fail-on-violation" "false"
+			  :buffer (generate-new-buffer "*flymake-pmd*")
+			  :stderr (get-buffer-create "*flymake-pmd stderr*")
+			  :command `(,flymake-pmd-executable-name
+                                     "check"
+				     "--format" "json"
+				     "--no-fail-on-violation"
 				     "--no-cache"
+                                     "--no-progress"
 				     "--rulesets" ,ruleset-file
-				     "--file-list" ,tmp-file-list)
+				     "-d" ,tmp-file)
 			  :sentinel
-			  (lambda (proc _event)
+			  (lambda (proc _ignore)
 			    ;; Check that the process has indeed exited, as it might
 			    ;; be simply suspended.
 			    ;;
 			    (when (memq (process-status proc) '(exit signal))
-			      (unwind-protect
 				  ;; Only proceed if `proc' is the same as
-				  ;; `pmd--flymake-proc', whihc indicates that
+				  ;; `pmd--flymake-proc', which indicates that
 				  ;; `proc' is not an obsolete process.
 				  ;;
-				  (if (with-current-buffer source (eq proc pmd--flymake-proc))
-				      (with-current-buffer (process-buffer proc)
-					(goto-char (point-min))
-					(forward-line 1) ;; skip the csv header line
+                                  (when (eq proc flymake-pmd--process)
+                                    (let ((proc-buffer (process-buffer proc)))
+                                      (funcall callback proc-buffer)
+                                      (kill-buffer proc-buffer)
+			              (delete-file tmp-file)))
+			         )))))))
 
-					;; Parse the output buffer for diagnostic'
-					;; messages and locations, collect them in a list
-					;; of objects, and call `report-fn'.
-					;;
-					(let ((diags '()))
-					  (while (not(eobp))
-					    (let* ((fields
-						    ;; split the csv line
-						    (split-string (buffer-substring-no-properties (line-beginning-position) (line-end-position)) ","))
-						   (description (string-trim (nth 5 fields) "\"" "\""))
-						   (linenum (string-to-number (string-trim (nth 4 fields) "\"" "\"")))
-						   (priority (string-to-number (string-trim (nth 3 fields) "\"" "\"")))
-						   (ruleset (string-trim (nth 6 fields) "\"" "\""))
-						   (type (if (<= priority 2)
-							     :error
-							   (if (<= priority 4)
-							       :warning
-							     :note)))
-						   (position (flymake-diag-region source linenum)))
-					      (setq diags (cons (flymake-make-diagnostic source
-											 (car position)
-											 (cdr position)
-											 type
-											 (format "%s (%s) [%d]" description ruleset priority))
-								diags)))
-					    (forward-line 1))
-					  (funcall report-fn diags)
-					  ))
-				    (flymake-log :warning "Cancelling obsolete check %s" proc))
-				;; cleanup the temporary buffer to hold the checks output
-				;;
-				(kill-buffer (process-buffer proc))
-				(delete-file tmp-file)
-				(delete-file tmp-file-list)
-				))))))))
+
+(defun flymake-pmd--check-and-report (source-buffer report-fn)
+  "Run PMD against SOURCE-BUFFER.
+Use REPORT-FN to report results."
+
+  (flymake-pmd--create-process
+   source-buffer
+   (lambda (pmd-stdout)
+     (funcall report-fn (flymake-pmd--report pmd-stdout source-buffer)))))
+
+
+(defun flymake-pmd--report (pmd-stdout-buffer source-buffer)
+  "Create Flymake diag messages from the content of PMD-STDOUT-BUFFER.
+They are reported against SOURCE-BUFFER. Returns a list of results."
+
+  (with-current-buffer pmd-stdout-buffer
+    ;; start at the top
+    (goto-char (point-min))
+    (flymake-pmd--create-diagnostics (json-parse-buffer) source-buffer)))
+
+
+
+
+
+
+(defun flymake-pmd--processing-errors-diags (errors source-buffer)
+  "FIXME."
+  (if (eq errors nil)
+      nil
+    (mapcar (lambda (perror)
+              (let ((description (gethash "message" perror))
+                    (position (flymake-diag-region source-buffer 1)))
+                (flymake-make-diagnostic source-buffer
+                                         (car position)
+                                         (cdr position)
+                                         :error
+                                         description)))
+            errors)))
+
+(defun flymake-pmd--rule-violations-diags (files source-buffer)
+  "FIXME"
+  (if (eq files nil)
+      '()
+    (let ((diags '()))
+      (mapc (lambda (file)
+              (mapc (lambda (violation)
+                      (let* ((description (gethash "description" violation))
+                            (begin-line (gethash "beginline" violation))
+                            (begin-column (gethash "begincolumn" violation))
+                            ;; (end-line (gethash "endkine" violation))
+                            ;; (end-column (gethash "endcolumn" violation))
+                            (priority (gethash "priority" violation))
+                            (rule (gethash "rule" violation))
+                            (position (flymake-diag-region source-buffer begin-line begin-column)))
+                       (push (flymake-make-diagnostic source-buffer
+                                                 (car position)
+                                                 (cdr position)
+                                                 :error ; FIXME set some threshold
+                                                 (format "%s [%s] - %s" priority rule description))
+                             diags)))
+                    (gethash "violations" file)))
+            files)
+      diags
+      )))
+                
+
+                    
+
+
+(defun flymake-pmd--create-diagnostics (json source-buffer)
+  "TODO"
+  (append
+   (flymake-pmd--processing-errors-diags (gethash "processingErrors" json) source-buffer)
+   (flymake-pmd--rule-violations-diags (gethash "files" json) source-buffer))
+  )
+   
+(defun flymake-pmd--checker (report-fn &rest _ignored)
+  "Backend function for flymake.
+REPORT-FN callback function to notify flymake of the errors.
+See `flymake-diagnostic-functions' for more details."
+  (flymake-pmd--check-and-report (current-buffer) report-fn))
+
 
 (defun flymake-pmd-setup-backend ()
   "Setup function for `flymake-pmd'."
-  (add-hook 'flymake-diagnostic-functions 'flymake-pmd--checker nil t))
+  (if flymake-pmd-use-eglot
+      (add-hook 'eglot-managed-mode-hook
+                (lambda () (add-hook 'flymake-diagnostic-functions 'flymake-pmd--checker nil t)))
+    (add-hook 'flymake-diagnostic-functions 'flymake-pmd--checker nil t)))
 
 ;;;###autoload
 (defun flymake-pmd-enable ()
   "Enable `flymake' and `flymake-pmd'.
-
 Add this function to some apex/java/... major mode hook."
   (interactive)
-  (flymake-pmd--ensure-java-exists)
-  (flymake-pmd--ensure-pmd-exists)
   (flymake-mode t)
   (flymake-pmd-setup-backend))
 
