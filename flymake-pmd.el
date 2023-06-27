@@ -1,4 +1,4 @@
-;;; flymake-pmd.el --- A PMD backend for Flymake -*- lexical-binding: t; -*-
+;;; flymake-pmd.el --- A PMD checker for Flymake -*- lexical-binding: t; -*-
 
 
 ;; Author: Rodolphe Blancho <rodolphe.blancho@gmail.com>
@@ -12,7 +12,7 @@
 
 ;;; Commentary:
 
-;; Provides a Flymake backend using PMD.
+;; Provides a PMD checker for Flymake.
 
 ;;; Code:
 
@@ -33,15 +33,33 @@
   :group 'flymake-pmd)
 
 (defcustom flymake-pmd-executable-name "pmd"
-  "The PMD executable. 
+  "The PMD executable name.
 If the command is not present in variable `exec-path', the full
 path to the executable is required."
   :type 'string
   :group 'flymake-pmd)
 
 (defcustom flymake-pmd-use-eglot nil
-  "Add eglot hook to enable PMD alongside eglot."
+  "Use PMD checker alongside eglot.
+When Eglot integrates with Flymake, it replaces all
+the checkers with the eglot checker. Setting this variable
+to `t` adds a hook to eglot-managed-hook to ensure that the
+PMD checker is set in Flymake."
   :type 'boolean
+  :group 'flymake-pmd)
+
+(defcustom flymake-pmd-use-pmd-6 nil
+  "Use pmd 6 cli format."
+  :type 'boolean
+  :group 'flymake-pmd)
+
+(defcustom flymake-pmd-pmd-6-app-name nil
+  "App name when using run.sh.
+When using PMD 6 run.sh script, an app name needs to
+be specified (usually \"pmd\"). If this variable is not nil
+it will be used as the app name. This is usually not needed
+on windows as pmd provides a .bat script for each app."
+  :type 'string
   :group 'flymake-pmd)
 
 ;;;; Private
@@ -105,14 +123,7 @@ argument."
 			  ;; make output go to a temporary buffer
 			  :buffer (generate-new-buffer "*flymake-pmd*")
 			  :stderr (get-buffer-create "*flymake-pmd stderr*")
-			  :command `(,flymake-pmd-executable-name
-                                     "check"
-				     "--format" "json"
-				     "--no-fail-on-violation"
-				     "--no-cache"
-                                     "--no-progress"
-				     "--rulesets" ,ruleset-file
-				     "-d" ,tmp-file)
+                          :command (flymake-pmd--command ruleset-file tmp-file)
 			  :sentinel
 			  (lambda (proc _ignore)
 			    ;; Check that the process has indeed exited, as it might
@@ -130,6 +141,26 @@ argument."
 			              (delete-file tmp-file)))
 			         )))))))
 
+(defun flymake-pmd--command (ruleset-file tmp-file)
+  "Return the command line as a list to execute PMD.
+RULESET-FILE is used as the ruleset,
+TMP-FILE is the temporary file containing the code to analyze."
+  (if flymake-pmd-use-pmd-6
+      `(,flymake-pmd-executable-name
+        ,flymake-pmd-pmd-6-app-name
+	"--format" "json"
+	"--fail-on-violation" "false"
+	"--no-cache"
+	"--rulesets" ,ruleset-file
+        "-d" ,tmp-file)
+    `(,flymake-pmd-executable-name
+      "check"
+      "--format" "json"
+      "--no-fail-on-violation"
+      "--no-cache"
+      "--no-progress"
+      "--rulesets" ,ruleset-file
+      "-d" ,tmp-file)))
 
 (defun flymake-pmd--check-and-report (source-buffer report-fn)
   "Run PMD against SOURCE-BUFFER.
