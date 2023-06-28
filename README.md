@@ -21,8 +21,9 @@ Coming soon...
 
 ## Activation
 
-To activate `flymake-pmd` on a buffer: `M-x flymake-pmd-enable`. You can also add a hook to a major mode to enable `flymake-pmd` automatically:
+To activate `flymake-pmd` on a buffer: `M-x flymake-pmd-enable`.
 
+You can also add a hook to a major mode to enable `flymake-pmd` automatically:
 ``` emacs-lisp
 (add-hook 'java-mode-hook 'flymake-pmd-enable)
 ```
