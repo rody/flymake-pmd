@@ -1,6 +1,5 @@
 ;;; flymake-pmd.el --- A PMD checker for Flymake -*- lexical-binding: t; -*-
 
-
 ;; Author: Rodolphe Blancho <rodolphe.blancho@gmail.com>
 ;; Version: 0.0.1
 ;; Keywords: flymake, pmd, tools
@@ -53,7 +52,7 @@ PMD checker is set in Flymake."
   :type 'boolean
   :group 'flymake-pmd)
 
-(defcustom flymake-pmd-pmd-6-app-name nil
+(defcustom flymake-pmd-pmd-6-app-name ""
   "App name when using run.sh.
 When using PMD 6 run.sh script, an app name needs to
 be specified (usually \"pmd\"). If this variable is not nil

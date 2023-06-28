@@ -50,11 +50,15 @@ Here is an example with `use-package`:
   (setq flymake-pmd-use-pmd-6 t)
   ;; PMD 6.x cli differs between windows and unix-like OSes.
   ;; On windows, the pmd command can be called directly and
-  ;; `flymake-pmd-pmd-6-app-name should be nil.
+  ;; `flymake-pmd-pmd-6-app-name should be "" (empty string).
   ;; On macos and unix, the run.sh script provided by PMD
   ;; needs the name of the app as a parameter.
-  (setq flymake-pmd-pmd-6-app-name "pmd")
+  (setq flymake-pmd-pmd-6-app-name "pmd"))
 ```
+
+At runtime `flymake-pmd` tries to discover the ruleset file to use. It is looking for a file in the same directory or any parent directory as the current on which matches the following names: "pmd.xml", "pmd-ruleset.xml" or "ruleset.xml". If no such file is found, an error will be raised.
+
+This list of name can be configured by changing the value of `flymake-pmd-ruleset-filename-list`.
 
 ## Limitations
 
