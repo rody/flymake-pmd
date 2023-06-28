@@ -129,6 +129,7 @@ argument."
 			    ;; be simply suspended.
 			    ;;
 			    (when (memq (process-status proc) '(exit signal))
+                              (unwind-protect
 				  ;; Only proceed if `proc' is the same as
 				  ;; `pmd--flymake-proc', which indicates that
 				  ;; `proc' is not an obsolete process.
@@ -136,9 +137,10 @@ argument."
                                   (when (eq proc flymake-pmd--process)
                                     (let ((proc-buffer (process-buffer proc)))
                                       (funcall callback proc-buffer)
-                                      (kill-buffer proc-buffer)
-			              (delete-file tmp-file)))
-			         )))))))
+			              (kill-buffer proc-buffer)))
+                                ;; cleanup
+                                (delete-file tmp-file))
+                            )))))))
 
 (defun flymake-pmd--command (ruleset-file tmp-file)
   "Return the command line as a list to execute PMD.
@@ -174,19 +176,15 @@ Use REPORT-FN to report results."
 (defun flymake-pmd--report (pmd-stdout-buffer source-buffer)
   "Create Flymake diag messages from the content of PMD-STDOUT-BUFFER.
 They are reported against SOURCE-BUFFER. Returns a list of results."
-
   (with-current-buffer pmd-stdout-buffer
     ;; start at the top
     (goto-char (point-min))
     (flymake-pmd--create-diagnostics (json-parse-buffer) source-buffer)))
 
 
-
-
-
-
 (defun flymake-pmd--processing-errors-diags (errors source-buffer)
-  "FIXME."
+  "Return flymake diagnostics based on the value of ERRORS.
+The diagnostic regions are created relative to SOURCE-BUFFER."
   (if (eq errors nil)
       nil
     (mapcar (lambda (perror)
@@ -200,7 +198,8 @@ They are reported against SOURCE-BUFFER. Returns a list of results."
             errors)))
 
 (defun flymake-pmd--rule-violations-diags (files source-buffer)
-  "FIXME"
+  "Return flymake diagnostics based on the value of FILES.
+The diagnostic regions are created relative to SOURCE-BUFFER."
   (if (eq files nil)
       '()
     (let ((diags '()))
@@ -222,15 +221,11 @@ They are reported against SOURCE-BUFFER. Returns a list of results."
                              diags)))
                     (gethash "violations" file)))
             files)
-      diags
-      )))
+      diags)))
                 
-
-                    
-
-
 (defun flymake-pmd--create-diagnostics (json source-buffer)
-  "TODO"
+  "Create flymake diagnostics from the processed JSON output.
+The diagnostic regions are created relative to SOURCE-BUFFER."
   (append
    (flymake-pmd--processing-errors-diags (gethash "processingErrors" json) source-buffer)
    (flymake-pmd--rule-violations-diags (gethash "files" json) source-buffer))
