@@ -72,3 +72,8 @@ This list of name can be configured by changing the value of `flymake-pmd-rulese
 ## Contributions
 
 Contributions are welcome! Feel free to open an issue or raise a PR.
+
+## Thanks
+
+ - The author of [flymake-eslint](https://github.com/orzechowskid/flymake-stylelint) from whom I took a lot of inspiration.
+ - The authors and maintainers of Flymake and Emacs
