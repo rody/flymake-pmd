@@ -68,6 +68,7 @@ This list of name can be configured by changing the value of `flymake-pmd-rulese
 ## TODO
 
  - [ ] allow the usage of external rules/jar
+ - [ ] allow user to specify a ruleset, bypassing the auto-detection
  
 ## Contributions
 
